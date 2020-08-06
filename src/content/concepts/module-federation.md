@@ -1,5 +1,5 @@
 ---
-title: Module Federation
+title: 模块联合（Module Federation）
 sort: 8
 contributors:
   - sokra
@@ -7,6 +7,7 @@ contributors:
   - EugeneHlushko
   - jamesgeorge007
   - ScriptedAlchemy
+  - vastwu
 related:
   - title: 'Webpack 5 Module Federation: A game-changer in JavaScript architecture'
     url: https://medium.com/swlh/webpack-5-module-federation-a-game-changer-to-javascript-architecture-bcdd30e02669
@@ -16,61 +17,60 @@ related:
     url: https://www.youtube.com/playlist?list=PLWSiF9YHHK-DqsFHGYbeAMwbd9xcZbEWJ
 ---
 
-## Motivation {#motivation}
+## 原因 {#motivation}
 
-Multiple separate builds should form a single application. These separate builds should not have dependencies between each other, so they can be developed and deployed individually.
+一个应用可能会被分成多个独立编译的部分，这些独立编译的部分之并没有互相依赖，他们应该可以被独立的开发和部署
 
-This is often known as Micro-Frontends, but is not limited to that.
+这就是常说的微前端（Micro-Frontends），但并不局限于此
 
-## Low-level concepts {#low-level-concepts}
+## 底层概念 {#low-level-concepts}
 
-We distinguish between local and remote modules. Local modules are normal modules which are part of the current build. Remote modules are modules that are not part of the current build and loaded from a so-called container at the runtime.
+首先我们区分一下本地模块和远程模块。本地模块是本地构建的一部分；远程模块不属于本地构建，而是在运行时从所谓的`container`中加载。
 
-Loading remote modules is considered asynchronous operation. When using a remote module these asynchronous operations will be placed in the next chunk loading operation(s) that is between the remote module and the entrypoint. It's not possible to use a remote module without a chunk loading operation.
+加载远程模块是一组异步操作，当使用远程模块时，会将这个远程模块和入口文件一起异步加载。所以使用远程模块必须依赖chunk加载。
 
-A chunk loading operation is usually an `import()` call, but older constructs like `require.ensure` or `require([...])` are supported as well.
+chunk加载经常使用`import()`调用，像`require.ensure`或者`require[(...)]`这些更早的模式中也可以工作
 
-A container is created through a container entry, which exposes asynchronous access to the specific modules. The exposed access is separated into two steps:
+`container`通过异步方式公开一些特定的模块作为入口，公开入口的行为分为以下步骤：
+1. 加载模块（异步的）
+2. 执行模块（同步的）
 
-1. loading the module (asynchronous)
-2. evaluating the module (synchronous).
+步骤1在chunk加载过程中完成。步骤二将在其他模块（本地和远程的）执行前完成。这样，执行顺序就不回受那些从本地转为远程（或者反过来）的模块的影响
 
-Step 1 will be done during the chunk loading. Step 2 will be done during the module evaluation interleaved with other (local and remote) modules. This way, evaluation order is unaffected by converting a module from local to remote or the other way around.
-
-It is possible to nest a container. Containers can use modules from other containers. Circular dependencies between container are also possible.
+也可以可以嵌套使用，`container` 可以使用另一些 `container` 中的模块，在 `container` 之间的循环依赖也是可行的。
 
 ### Overriding {#overriding}
 
-A container is able to flag selected local modules as "overridable". A consumer of the container is able to provide "overrides", which are modules that replace one of the overridable modules of the container. All modules of the container will use the replacement module instead of the local module when the consumer provides one. When the consumer doesn't provide a replacement module, all modules of the container will use the local one.
+`container`可以选择一些本地模块，标记为**可复写的**，`container`的使用者能够设定替换哪些`container`中的某一些被标记为**可复写的**的模块。`container`中的所有模块都会使用被替换了之后的模块，而不会再使用本地模块。当使用者没有设定任何替换时，`container`将会使用本地模块
 
-The container will manage overridable modules in a way that they do not need to be downloaded when they have been overridden by the consumer. This usually happens by placing them into separate chunks.
 
-On the other hand, the provider of the replacement modules, will only provide asynchronous loading functions. It allows the container to load replacement modules only when they are needed. The provider will manage replacement modules in a way that they do not need to be downloaded at all when they are not requested by the container. This usually happens by placing them into separate chunks.
+`container`不需要下载这些被使用者复写的模块，一般是通过独立chunk打包来实现。
 
-A "name" is used to identify overridable modules from the container.
+另一方面，替换模块的提供方，需要支持异步加载函数。将会允许`container`只在需要的时候加载被替换的模块。同时`container`也不会加载不需要的模块，一般是通过独立chunk打包来实现。
 
-Overrides are provided in a similar way as the container exposes modules, separated into two steps:
+需要一个"name"属性标记`container`中的可重写模块
 
-1. Loading (asynchronous)
-2. evaluating (asynchronous)
+复写模块与`container`
+模块的过程类似，分为以下两部
+1. 加载（异步的）
+2. 执行（异步的）
 
-W> When nesting is used, providing overrides to one container will automatically override the modules with the same "name" in the nested container(s).
+W> 当发生`container`嵌套时，提供了复写模块的`container`会自动复写被嵌套`container`中的同"name"模块
 
-Overrides must be provided before the modules of the container are loaded. Overridables that are used in initial chunk, can only be overridden by a synchronous module override that doesn't use Promises. Once evaluated, overridables are no longer overridable.
+复写必须在`container`加载前就被设定好，在初始化chunk中模块，只能被不使用Promise的同步模块复写，一旦被执行，就不能在复写了
 
-## High-level concepts {#high-level-concepts}
+## 高层概念 {#high-level-concepts}
+每个构建的`container`都可以消费其他构建的`container`。通过这种方式，任何构建都能够加载其他`container`来使用和访问其公开的模块。
 
-Each build acts as a container and also consumes other builds as containers. This way each build is able to access any other exposed module by loading it from its container.
+**Shared**模块即是可被复写的，也可以复写被嵌套的其他`container`的模块，它们通常指向每个构建中的相同模块，例如相同的库。
 
-Shared modules are modules that are both overridable and provided as overrides to nested container. They usually point to the same module in each build, e.g. the same library.
-
-The `packageName` option allows setting a package name to look for a `requiredVersion`. It is automatically inferred for the module requests by default, set `requiredVersion` to `false` when automatic infer should be disabled.
+`packageName`选项允许设置一个包的名称来寻找一个`requiredVersion`。默认情况下会自动推判断块请求，将`requiredVersion`设置为`false`可以禁用自动判断。
 
 ## Building blocks {#building-blocks}
 
-### `OverridablesPlugin` (low level) {#overridablesplugin-low-level}
+### `OverridablesPlugin` (底层) {#overridablesplugin-low-level}
 
-This plugin makes specific modules "overridable". A local API (`__webpack_override__`) allows to provide overrides.
+该插件定义了哪些模块可以被复写，通过一个运行时接口(`__webpack_override__`)可以进行复写
 
 __webpack.config.js__
 
@@ -97,54 +97,52 @@ __webpack_override__({
 });
 ```
 
-### `ContainerPlugin` (low level) {#containerplugin-low-level}
+### `ContainerPlugin` (底层) {#containerplugin-low-level}
 
-This plugin creates an additional container entry with the specified exposed modules. It also uses the `OverridablesPlugin` internally and exposes the `override` API to consumer of the container.
+该插件创建了一个`container`入口，包含一些指定公开的模块。它还在内部使用`OverridablesPlugin`，并向`container`公开了`override`接口。
 
-### `ContainerReferencePlugin` (low level) {#containerreferenceplugin-low-level}
+### `ContainerReferencePlugin` (底层) {#containerreferenceplugin-low-level}
 
-This plugin adds specific references to containers as externals and allows to import remote modules from these containers. It also calls the `override` API of these containers to provide overrides to them. Local overrides (via `__webpack_override__` or `override` API when build is also a container) and specified overrides are provided to all referenced containers.
+该插件将特定的`container`引用排除到外部，并允许从这些`container`中加载远程模块。它还调用这些容器的`override`接口来为它们进行复写。本地复写(通过`__webpack_override__`接口，当构建也是一个`container`时使用`override`接口)和指定的复写模块，会被提供给所有被引用的`container`。
 
-### `ModuleFederationPlugin` (high level) {#modulefederationplugin-high-level}
+### `ModuleFederationPlugin` (高级) {#modulefederationplugin-high-level}
 
-This plugin combines `ContainerPlugin` and `ContainerReferencePlugin`. Overrides and overridables are combined into a single list of specified shared modules.
+该插件合并了`ContainerPlugin` 和 `ContainerReferencePlug`。复写和可被复写的模块被合并到一个特定的`shared`模块列表中
 
-## Concept goals {#concept-goals}
+## 目标概念 {#concept-goals}
 
-- It should be possible to expose and use any module type that webpack supports.
-- Chunk loading should load everything needed in parallel (web: single round-trip to server).
-- Control from consumer to container
-    - Overriding modules is a one-directional operation.
-    - Sibling containers cannot override each other's modules.
-- Concept should be environment-independent.
-    - Usable in web, Node.js, etc.
-- Relative and absolute request in shared:
-    - Will always be provided, even if not used.
-    - Will resolve relative to `config.context`.
-    - Does not use a `requiredVersion` by default.
-- Module requests in shared:
-    - Are only provided when they are used.
-    - Will match all used equal module requests in your build.
-    - Will provide all matching modules.
-    - Will extract `requiredVersion` from package.json at this position in the graph.
-    - Could provide and consume multiple different version when you have nested node_modules.
-- Module requests with trailing `/` in shared will match all module requests with this prefix.
+- 应该可以公开和使用任何webpack支持的模块类型
+- 加载Chunk应该可以并行加载需要的内容（web:从服务端一次性加载）
+- 消费者对`container`的控制
+  - 覆盖模块是单向操作
+  - 同级`container`不能覆盖彼此的模块。
+- 概念是独立于运行环境的
+  - 可用于web,node.js 等等
+- 在`shared`中的相对和绝对请求
+  - 即使没有被使用也要被支持
+  - 可以被`config.context`解析成相对请求
+  - 默认情况下不使用`requiredVersion`。
+- `shared`中的模块请求
+  - 只有在被使用时才提供
+  - 将在构建中匹配所有相同的模块请求
+  - 将提供所有的匹配模块
+  - 将从package.json中提取`requiredVersion`
+  - 当嵌套`node_modules`时，可以提供和消费多个不同的版本
+- 在`shared`中，以`/`结尾的模块请求，将匹配所有带有这个前缀的模块请求。
 
-## Use cases {#use-cases}
+## 使用案例 {#use-cases}
 
-### Separate builds per page {#separate-builds-per-page}
+### 单页分拆构建 {#separate-builds-per-page}
 
-Each page of a Single Page Application is exposed from container build in a separate build. The application shell is also a separate build referencing all pages as remote modules. This way each page can be separately deployed. The application shell is deployed when routes are updated or new routes are added. The application shell defines commonly used libraries as shared modules to avoid duplication of them in the page builds.
+单页应用中的每一个页面，从`container`构建中分出，作为一个独立的构建。应用外壳也是一个独立的构建，以远程模块的方式引用所有的页面。通过这种方式，可以单独部署每个页面，在更新路由或添加新路由时才部署应用外壳，应用外壳通常将使用的库作为`shared`模块，以避免在页面构建中出现重复
 
-### Components library as container {#components-library-as-container}
+### 组件库Container {#components-library-as-container}
 
-Many applications share a common components library which could be built as a container with each component exposed. Each application consumes components from the components library container. Changes to the components library can be separately deployed without the need to re-deploy all applications. The application automatically uses the up-to-date version of the components library.
+许多应用共享一个通用的组件库，可以将其构建为一个容器，公开包含的组件。其他应用使用来自组件库`container`的组件。可以单独部署组件库的更新，而不需要重新部署所有应用程序。应用程序自动使用组件库的最新版本
 
-## Dynamic Remote Containers {#dynamic-remote-containers}
-
-The container interface supports `get` and `init` methods.
-`init` is a `async` compatible method that is called with one argument: the shared scope object. This object is used as a shared scope in the remote container and is filled with the provided modules from a host.
-It can be leveraged to connect remote containers to a host container dynamically at runtime.
+## 远程动态Containers {#dynamic-remote-containers}
+`container`接口支持`get`和`init`方法。
+`init`是一个兼容异步的方法，只有一个参数：共享范围对象。该对象在远程容器中用作共享作用于，并由主应用填充模块。可以利用它在运行时动态地将远程容器连接到主机容器。
 
 __init.js__
 
@@ -159,10 +157,11 @@ __init.js__
 })();
 ```
 
-The container tries to provide shared modules, but if the shared module has already been used, a warning and the provided shared module will be ignored. The container might still use it as a fallback.
+`container`尝试提供共享模块，但是如果共享模块已经被使用，将忽略警告和提供的共享模块。`container`可能仍然使用它作为降级方案。
 
-This way you could dynamically load an A/B test which provides a different version of a shared module.
-T> Ensure you have loaded the container before attempting to dynamically connect a remote container.
+以这种方式可以动态的加载不同版本的`shared`模块，作为A/B test。
+T> 在尝试动态连接远程`container`之前，确保已加载`container`;
+
 
 Example:
 
@@ -185,19 +184,20 @@ function loadComponent(scope, module) {
 loadComponent('abtests', 'test123');
 ```
 
-[See full implementation](https://github.com/module-federation/module-federation-examples/tree/master/advanced-api/dynamic-remotes)
+[查看完整实现](https://github.com/module-federation/module-federation-examples/tree/master/advanced-api/dynamic-remotes)
 
-## Troubleshooting {#troubleshooting}
+## 问题处理 {#troubleshooting}
 
 __`Uncaught Error: Shared module is not available for eager consumption`__
 
-The application is eagerly executing an application which is operating as an omnidirectional host. There are options to choose from:
 
-You can set the dependency as eager inside the advanced API of Module Federation, which doesn’t put the modules in an async chunk, but provides them synchronously. This allows us to use these shared modules in the initial chunk. But be careful as all provided and fallback modules will always be downloaded. It’s recommended to provide it only at one point of your application, e.g. the shell.
+？？应用正在急切地执行一个作为全向主机运行的应用。有两个方案
 
-We strongly recommend using an asynchronous boundary. It will split out the initialization code of a larger chunk to avoid any additional round trips and improve performance in general.
+可以在模块联合的高级API中将依赖设置为即时依赖，该API不会将模块放在异步块中，而是同步地提供它们。这允许我们在初始chunk中使用这些共享模块。但是要小心，因为所有提供的和降级模块总是要下载的。建议只在应用程序的某个地方提供它，例如外壳。
 
-For example, your entry looked like this:
+我们强烈建议使用异步边界。它将把初始化代码分割成更大的chunk，以避免任何额外的冗余，并在总体上提高性能。
+
+举个例子，你的入口文件大概是这样
 
 __index.js__
 
@@ -208,7 +208,7 @@ import App from './App';
 ReactDOM.render(<App />, document.getElementById('root'));
 ```
 
-Let's create `bootstrap.js` file and move contents of the entry into it, and import that bootstrap into the entry:
+我们创建一个`bootstrap`文件，并将入口文件的内容放在里面，然后在入口文件中 import 这个 bootstrap:
 
 __index.js__
 
@@ -229,9 +229,9 @@ __bootstrap.js__
 + ReactDOM.render(<App />, document.getElementById('root'));
 ```
 
-This method works but can have limitations or drawbacks.
+这种方法有效，但也有局限性或缺点。
 
-Setting `eager: true` for dependency via the `ModuleFederationPlugin`
+在`ModuleFederationPlugin`中设置 `eager: true`  
 
 __webpack.config.js__
 
@@ -249,9 +249,9 @@ new ModuleFederationPlugin({
 
 __`Uncaught Error: Module "./Button" does not exist in container.`__
 
-It likely does not say `"./Button"`, but the error message will look similar. This issue is typically seen if you are upgrading from webpack beta.16 to webpack beta.17.
+看起来不像`"./Button"`，但是错误信息看起来类似。这是个从webpack beta.16 升级到 bata.17 的代表性问题。
 
-Within ModuleFederationPlugin. Change the exposes from:
+在`ModuleFederationPlugin`中，修改`exposes`
 
 ```diff
 new ModuleFederationPlugin({
@@ -264,5 +264,6 @@ new ModuleFederationPlugin({
 
 __`Uncaught TypeError: fn is not a function`__
 
-You are likely missing the remote container, make sure its added.
-If you have the container loaded for the remote you are trying to consume, but still see this error, add the host container's remote container file to the HTML as well.
+您可能丢失了远程`container`，请确保添加了它。
+如果已为试图使用的远程服务器加载了`container`，但仍然看到此错误，则还将主机`container`的远程`container`文件添加到HTML中。
+
