@@ -7,7 +7,6 @@ contributors:
   - EugeneHlushko
   - jamesgeorge007
   - ScriptedAlchemy
-  - vastwu
 related:
   - title: 'Webpack 5 Module Federation: A game-changer in JavaScript architecture'
     url: https://medium.com/swlh/webpack-5-module-federation-a-game-changer-to-javascript-architecture-bcdd30e02669
@@ -35,7 +34,7 @@ chunk加载经常使用`import()`调用，像`require.ensure`或者`require[(...
 1. 加载模块（异步的）
 2. 执行模块（同步的）
 
-步骤1在chunk加载过程中完成。步骤二将在其他模块（本地和远程的）执行前完成。这样，执行顺序就不回受那些从本地转为远程（或者反过来）的模块的影响
+步骤1在chunk加载过程中完成。步骤二将在其他模块（本地和远程的）执行前完成。这样，执行顺序就不会受那些从本地转为远程（或者反过来）的模块的影响
 
 也可以可以嵌套使用，`container` 可以使用另一些 `container` 中的模块，在 `container` 之间的循环依赖也是可行的。
 
@@ -109,24 +108,24 @@ __webpack_override__({
 
 该插件合并了`ContainerPlugin` 和 `ContainerReferencePlug`。复写和可被复写的模块被合并到一个特定的`shared`模块列表中
 
-## 目标概念 {#concept-goals}
+## 概念目标 {#concept-goals}
 
 - 应该可以公开和使用任何webpack支持的模块类型
 - 加载Chunk应该可以并行加载需要的内容（web:从服务端一次性加载）
-- 消费者对`container`的控制
+- 使用者对`container`的控制
   - 覆盖模块是单向操作
   - 同级`container`不能覆盖彼此的模块。
 - 概念是独立于运行环境的
   - 可用于web,node.js 等等
-- 在`shared`中的相对和绝对请求
+- `shared`中的相对和绝对请求
   - 即使没有被使用也要被支持
-  - 可以被`config.context`解析成相对请求
+  - 可以被解析为相对于`config.context`的请求
   - 默认情况下不使用`requiredVersion`。
 - `shared`中的模块请求
   - 只有在被使用时才提供
   - 将在构建中匹配所有相同的模块请求
   - 将提供所有的匹配模块
-  - 将从package.json中提取`requiredVersion`
+  - 将从依赖关系图的package.json中提取`requiredVersion`
   - 当嵌套`node_modules`时，可以提供和消费多个不同的版本
 - 在`shared`中，以`/`结尾的模块请求，将匹配所有带有这个前缀的模块请求。
 
